@@ -23,7 +23,7 @@ if ($policyDocument  -and ($policyDocument.Count -eq 1 )) {
 }
 if ($policyDocument.expressions.statement.Count -eq 2) { 
     Write-Output "`u{2705} Checking number of policy document statements - OK. "
-} else { 
+} else {
     throw "`u{1F635} Unable to validate number of policy document statements. Please make sure that you added 2 policy document statements and try again. "
 }
 

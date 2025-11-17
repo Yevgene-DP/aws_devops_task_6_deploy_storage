@@ -1,0 +1,3 @@
+bucket_name = "grafana-backups-f9efcf43"
+s3_bucket_arn = "arn:aws:s3:::grafana-backups-f9efcf43"
+s3_bucket_name = "grafana-backups-f9efcf43"
