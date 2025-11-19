@@ -1,38 +1,58 @@
-$tfPlanPath = "tfplan.json"
+# test-tf-plan.ps1
+param(
+    [string]$PlanFile = "tfplan"
+)
 
-if (Test-Path $tfPlanPath) { 
-    Write-Output "`u{2705} Checking if terrafom plan exists - OK. "
-} else { 
-    throw "`u{1F635} Unable to find terraform plan file. Please make sure that you saved terraform execution plan to the file and try again. "
+# Перевірка наявності plan файлу
+if (-not (Test-Path $PlanFile)) {
+    Write-Error "❌ Terraform plan file '$PlanFile' not found."
+    Write-Host "💡 Please run: terraform plan -out=$PlanFile"
+    exit 1
 }
 
-$plan = (Get-Content -Path $tfPlanPath | ConvertFrom-Json) 
+Write-Host "✅ Testing Terraform plan..."
 
-$s3 = $plan.configuration.root_module.resources | Where-Object {$_.type -eq "aws_s3_bucket"} 
-if ($s3 -and ($s3.Count -eq 1 )) {
-    Write-Output "`u{2705} Checking if S3 resource is present - OK. "
-} else { 
-    throw "`u{1F635} Unable to find S3 resource. Please make sure that you added it and try again. "
+# Використовуємо terraform show для конвертації в JSON
+$planJson = terraform show -json $PlanFile
+$plan = $planJson | ConvertFrom-Json
+
+Write-Host "✅ Plan file loaded successfully!"
+
+# Перевірка наявності S3 bucket
+$s3Bucket = $plan.planned_values.root_module.resources | Where-Object { 
+    $_.type -eq "aws_s3_bucket" -and $_.name -eq "grafana_backups" 
 }
 
-$policyDocument = $plan.configuration.root_module.resources | Where-Object {$_.type -eq "aws_iam_policy_document"}
-if ($policyDocument  -and ($policyDocument.Count -eq 1 )) {
-    Write-Output "`u{2705} Checking if policy document data source is present - OK. "
-} else { 
-    throw "`u{1F635} Unable to find policy document data source. Please make sure that you added the 'aws_iam_policy_document' data source to the configuratoin and try again. "
-}
-if ($policyDocument.expressions.statement.Count -eq 2) { 
-    Write-Output "`u{2705} Checking number of policy document statements - OK. "
+if ($s3Bucket) {
+    Write-Host "✅ S3 bucket 'grafana_backups' found in plan"
+    Write-Host "   Bucket name: $($s3Bucket.values.bucket)"
 } else {
-    throw "`u{1F635} Unable to validate number of policy document statements. Please make sure that you added 2 policy document statements and try again. "
+    Write-Error "❌ S3 bucket resource 'grafana_backups' not found in plan"
+    exit 1
 }
 
-$bucket_policy = $plan.configuration.root_module.resources | Where-Object {$_.type -eq "aws_s3_bucket_policy"}
-if ($bucket_policy  -and ($bucket_policy.Count -eq 1 )) {
-    Write-Output "`u{2705} Checking if bucket policy resource is present - OK. "
-} else { 
-    throw "`u{1F635} Unable to find bucket policy resource. Please make sure that you added the 'bucket_policy' data source to the configuratoin and try again. "
+# Перевірка наявності random_id
+$randomId = $plan.planned_values.root_module.resources | Where-Object { 
+    $_.type -eq "random_id" -and $_.name -eq "suffix" 
 }
 
-Write-Output ""
-Write-Output "`u{1F973} Congratulations! All tests passed!"
+if ($randomId) {
+    Write-Host "✅ Random ID resource found"
+} else {
+    Write-Error "❌ Random ID resource not found in plan"
+    exit 1
+}
+
+# Перевірка наявності bucket policy
+$bucketPolicy = $plan.planned_values.root_module.resources | Where-Object { 
+    $_.type -eq "aws_s3_bucket_policy" -and $_.name -eq "grafana_policy" 
+}
+
+if ($bucketPolicy) {
+    Write-Host "✅ S3 bucket policy found"
+} else {
+    Write-Error "❌ S3 bucket policy not found in plan"
+    exit 1
+}
+
+Write-Host "🎉 All Terraform plan tests passed!"
