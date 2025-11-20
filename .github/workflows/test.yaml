@@ -1,18 +1,33 @@
-name: Test
-
-run-name: ${{ github.actor }} - ${{ github.ref_name }}
+name: Terraform Plan Test
 
 on:
-  workflow_dispatch: 
+  push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
-jobs: 
-  validate-task:
-    runs-on: windows-latest
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: 'Test terraform plan' 
-      shell: pwsh
-      run: tests/test-tf-plan.ps1
-  
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Create Terraform Plan
+      run: |
+        terraform plan -out=tfplan -var="grafana_iam_role_arn=arn:aws:iam::123456789012:role/dummy-role"
+        ls -la # Перевірити чи створився файл
+
+    - name: Run Tests
+      run: |
+        ls -la # Маємо бачити tfplan файл
+        pwsh ./tests/test-tf-plan.ps1

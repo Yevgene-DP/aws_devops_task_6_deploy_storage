@@ -1,57 +1,99 @@
 # test-tf-plan.ps1
 param(
-    [string]$PlanFile = "tfplan"
+    [string]$PlanFile = "tfplan",
+    [string]$JsonPlanFile = "tfplan.json"
 )
+
+Write-Host "🔍 Starting Terraform plan tests..."
 
 # Перевірка наявності plan файлу
 if (-not (Test-Path $PlanFile)) {
     Write-Error "❌ Terraform plan file '$PlanFile' not found."
-    Write-Host "💡 Please run: terraform plan -out=$PlanFile"
+    Write-Host "📁 Current directory: $(Get-Location)"
+    Write-Host "📁 Files in directory:"
+    Get-ChildItem
     exit 1
 }
 
-Write-Host "✅ Testing Terraform plan..."
+Write-Host "✅ Terraform plan file found: $PlanFile"
 
-# Використовуємо terraform show для конвертації в JSON
-$planJson = terraform show -json $PlanFile
-$plan = $planJson | ConvertFrom-Json
+# Конвертуємо plan в JSON
+Write-Host "🔄 Converting plan to JSON..."
+terraform show -json $PlanFile > $JsonPlanFile
 
-Write-Host "✅ Plan file loaded successfully!"
+if (-not (Test-Path $JsonPlanFile)) {
+    Write-Error "❌ Failed to create JSON plan file"
+    exit 1
+}
 
-# Перевірка наявності S3 bucket
+Write-Host "✅ JSON plan file created: $JsonPlanFile"
+
+# Завантажуємо JSON
+try {
+    Write-Host "📖 Loading JSON plan..."
+    $jsonContent = Get-Content -Path $JsonPlanFile -Raw -ErrorAction Stop
+    $plan = $jsonContent | ConvertFrom-Json -ErrorAction Stop
+    Write-Host "✅ JSON plan loaded successfully!"
+}
+catch {
+    Write-Error "❌ Failed to parse JSON: $($_.Exception.Message)"
+    Write-Host "💡 JSON content preview:"
+    if (Test-Path $JsonPlanFile) {
+        Get-Content -Path $JsonPlanFile -First 5
+    }
+    exit 1
+}
+
+# Перевірка ресурсів
+Write-Host "🔍 Checking resources..."
+
+$resourcesFound = @()
+$resourcesMissing = @()
+
+# S3 Bucket
 $s3Bucket = $plan.planned_values.root_module.resources | Where-Object { 
     $_.type -eq "aws_s3_bucket" -and $_.name -eq "grafana_backups" 
 }
 
 if ($s3Bucket) {
-    Write-Host "✅ S3 bucket 'grafana_backups' found in plan"
-    Write-Host "   Bucket name: $($s3Bucket.values.bucket)"
+    Write-Host "✅ S3 bucket 'grafana_backups' found"
+    $resourcesFound += "S3 Bucket"
 } else {
-    Write-Error "❌ S3 bucket resource 'grafana_backups' not found in plan"
-    exit 1
+    Write-Error "❌ S3 bucket resource 'grafana_backups' not found"
+    $resourcesMissing += "S3 Bucket"
 }
 
-# Перевірка наявності random_id
+# Random ID
 $randomId = $plan.planned_values.root_module.resources | Where-Object { 
     $_.type -eq "random_id" -and $_.name -eq "suffix" 
 }
 
 if ($randomId) {
     Write-Host "✅ Random ID resource found"
+    $resourcesFound += "Random ID"
 } else {
-    Write-Error "❌ Random ID resource not found in plan"
-    exit 1
+    Write-Error "❌ Random ID resource not found"
+    $resourcesMissing += "Random ID"
 }
 
-# Перевірка наявності bucket policy
+# Bucket Policy
 $bucketPolicy = $plan.planned_values.root_module.resources | Where-Object { 
     $_.type -eq "aws_s3_bucket_policy" -and $_.name -eq "grafana_policy" 
 }
 
 if ($bucketPolicy) {
     Write-Host "✅ S3 bucket policy found"
+    $resourcesFound += "Bucket Policy"
 } else {
-    Write-Error "❌ S3 bucket policy not found in plan"
+    Write-Error "❌ S3 bucket policy not found"
+    $resourcesMissing += "Bucket Policy"
+}
+
+# Результати
+Write-Host "`n📊 Test Results:"
+Write-Host "✅ Found: $($resourcesFound -join ', ')"
+if ($resourcesMissing) {
+    Write-Error "❌ Missing: $($resourcesMissing -join ', ')"
     exit 1
 }
 
