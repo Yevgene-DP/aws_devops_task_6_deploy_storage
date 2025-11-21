@@ -5,15 +5,31 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
 provider "aws" {
   region = "us-east-1"
+  
+  # ВИМКНУТИ всі перевірки аутентифікації
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  
+  # Fake endpoints для уникнення реальних AWS викликів
+  endpoints {
+    s3 = "http://localhost:4566"  # LocalStack endpoint
+  }
 }
 
 variable "grafana_iam_role_arn" {
-  type = string
+  type    = string
+  default = "arn:aws:iam::123456789012:role/dummy-role"
 }
 
 # Генерувати унікальний суфікс для імені bucket
